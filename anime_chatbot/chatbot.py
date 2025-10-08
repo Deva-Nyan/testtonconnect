@@ -10,6 +10,10 @@ from transformers.generation.logits_process import (
     LogitsProcessorList,
     NoBadWordsLogitsProcessor,
 )
+from transformers.generation.stopping_criteria import (
+    StoppingCriteria,
+    StoppingCriteriaList,
+)
 
 try:
     import torch
@@ -23,6 +27,27 @@ from .persona import PersonaSettings
 from .memory import DvachMemory
 
 Conversation = List[Tuple[str, str]]
+
+
+class _StopOnSequences(StoppingCriteria):
+    """Stop generation when any of the provided token sequences appears."""
+
+    def __init__(self, sequences: Sequence[Sequence[int]]):
+        self.stop_sequences = [
+            torch.tensor(seq, dtype=torch.long) for seq in sequences if seq
+        ]
+
+    def __call__(self, input_ids, scores, **kwargs) -> bool:  # type: ignore[override]
+        if not self.stop_sequences or input_ids.size(0) == 0:
+            return False
+        generated = input_ids[0]
+        for seq in self.stop_sequences:
+            length = seq.size(0)
+            if generated.size(-1) >= length and torch.equal(
+                generated[-length:], seq.to(generated.device)
+            ):
+                return True
+        return False
 
 
 @dataclass
@@ -68,7 +93,10 @@ class AnimeChatbot:
         if tokenizer_vocab != self.model.config.vocab_size:
             added = getattr(self.tokenizer, "added_tokens_encoder", {})
             if added:
-                self.model.resize_token_embeddings(tokenizer_vocab)
+                self.model.resize_token_embeddings(
+                    tokenizer_vocab,
+                    mean_resizing=False,
+                )
             else:
                 self.model.config.vocab_size = tokenizer_vocab
         self._fallback_reply = self.config.fallback_reply.strip()
@@ -143,6 +171,8 @@ class AnimeChatbot:
             "FIRST@@",
             "SECOND@@",
             "@@",
+            "Dream:",
+            "Bot_didnt_y",
         ]
         bad_word_ids = []
         for pattern in bad_patterns:
@@ -157,6 +187,17 @@ class AnimeChatbot:
                     eos_token_id=self.model.config.eos_token_id,
                 )
             )
+        stop_sequences = [
+            self.tokenizer.encode("\nUser:", add_special_tokens=False),
+            self.tokenizer.encode("User:", add_special_tokens=False),
+            self.tokenizer.encode("\nUser :", add_special_tokens=False),
+            self.tokenizer.encode("User :", add_special_tokens=False),
+        ]
+        stopping = StoppingCriteriaList(
+            [_StopOnSequences(stop_sequences)]
+            if any(stop_sequences)
+            else []
+        )
         generate_kwargs = {
             "do_sample": True,
             "max_new_tokens": gen_cfg.max_new_tokens,
@@ -169,6 +210,8 @@ class AnimeChatbot:
         }
         if len(logits_processor) > 0:
             generate_kwargs["logits_processor"] = logits_processor
+        if len(stopping) > 0:
+            generate_kwargs["stopping_criteria"] = stopping
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
@@ -215,6 +258,10 @@ class AnimeChatbot:
         )
         cleaned = re.sub(r"nya_[a-zA-Z0-9_]+", "ня~", cleaned)
         cleaned = re.sub(r"@@", "", cleaned)
+        cleaned = re.sub(r"Bot_didnt_y", "", cleaned)
+        cleaned = re.sub(r"\bDream:\s*", "", cleaned)
+        cleaned = re.sub(r"\bBot:\s*", "", cleaned)
+        cleaned = re.sub(r"\bUser:\s*", "", cleaned)
         cleaned = re.sub(r"[~]{3,}", "~~", cleaned)
         cleaned = re.sub(
             r"(ня+~?)(\s*\1){2,}",
@@ -222,6 +269,7 @@ class AnimeChatbot:
             cleaned,
             flags=re.IGNORECASE,
         )
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
         cleaned = cleaned.split("\n\n")[0].strip()
         cleaned = cleaned[:400].rstrip()
         return cleaned.strip()
