@@ -30,7 +30,7 @@ def load_memory(path: Optional[Path]) -> Optional[DvachMemory]:
 
 @app.command()
 def main(
-    model_name: str = typer.Option("tinkoff-ai/ruDialoGPT-medium", help="Hugging Face модель"),
+    model_name: str = typer.Option("t-bank-ai/ruDialoGPT-medium", help="Hugging Face модель"),
     device: Optional[str] = typer.Option(None, help="Устройство: cpu/cuda/индекс"),
     persona_file: Optional[Path] = typer.Option(None, exists=True, help="JSON с настройками персонажа"),
     memory_file: Optional[Path] = typer.Option(
