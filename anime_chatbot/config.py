@@ -10,6 +10,7 @@ class GenerationConfig:
     """Low-level generation settings for the language model."""
 
     max_new_tokens: int = 120
+    min_new_tokens: int = 20
     temperature: float = 0.95
     top_p: float = 0.9
     repetition_penalty: float = 1.05

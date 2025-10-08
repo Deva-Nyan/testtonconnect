@@ -102,8 +102,9 @@ class AnimeChatbot:
 
     def _generate(self, prompt: str) -> str:
         gen_cfg = self.config.generation
+        prepared_prompt = f"{prompt}{self.tokenizer.eos_token}" if self.tokenizer.eos_token else prompt
         inputs = self.tokenizer(
-            prompt,
+            prepared_prompt,
             return_tensors="pt",
             add_special_tokens=False,
         ).to(self._device)
@@ -112,6 +113,7 @@ class AnimeChatbot:
                 **inputs,
                 do_sample=True,
                 max_new_tokens=gen_cfg.max_new_tokens,
+                min_new_tokens=gen_cfg.min_new_tokens,
                 temperature=gen_cfg.temperature,
                 top_p=gen_cfg.top_p,
                 repetition_penalty=gen_cfg.repetition_penalty,
