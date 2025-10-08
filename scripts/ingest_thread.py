@@ -58,7 +58,7 @@ def main(
     api_host: List[str] = typer.Option(
         [],
         "--api-host",
-        help="Домен Makaba (можно указать несколько, например 2ch.org)",
+        help="Домен Makaba (можно указать несколько, например 2ch.tf или 2ch.org)",
     ),
     verbose: bool = typer.Option(False, help="Включить расширенные логи"),
 ) -> None:

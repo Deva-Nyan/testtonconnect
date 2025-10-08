@@ -30,6 +30,7 @@ class ChatbotConfig:
     welcome_message: str = "Привет-привет! Нэко уже здесь, чем займёмся nya~?"
     history_turns: int = 6
     memory_snippets: int = 3
+    fallback_reply: str = "Ня... пока не знаю, что ответить, давай попробуем ещё раз?"
     generation: GenerationConfig = field(default_factory=GenerationConfig)
 
     def as_dict(self) -> dict:
@@ -42,5 +43,6 @@ class ChatbotConfig:
             "welcome_message": self.welcome_message,
             "history_turns": self.history_turns,
             "memory_snippets": self.memory_snippets,
+            "fallback_reply": self.fallback_reply,
             "generation": self.generation.__dict__,
         }

@@ -43,6 +43,7 @@ class AnimeChatbot:
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        self._fallback_reply = self.config.fallback_reply.strip()
 
     # -------------------- Public API --------------------
     def reset_history(self) -> None:
@@ -104,13 +105,19 @@ class AnimeChatbot:
         return str(generated)
 
     def _extract_reply(self, generated: str) -> str:
+        stripped = generated.strip()
+        cleaned = stripped
         stop_tokens = self.config.generation.stop_tokens
         for token in stop_tokens:
-            if token in generated:
-                generated = generated.split(token)[0]
-        cleaned = generated.strip()
+            if token in cleaned:
+                before = cleaned.split(token)[0].strip()
+                if before:
+                    cleaned = before
+                    break
         if not cleaned:
-            cleaned = "Ня... пока не знаю, что ответить, давай попробуем ещё раз?"
+            cleaned = stripped
+        if not cleaned:
+            cleaned = self._fallback_reply or self.config.fallback_reply
         return cleaned
 
     def export_history(self) -> Sequence[Tuple[str, str]]:

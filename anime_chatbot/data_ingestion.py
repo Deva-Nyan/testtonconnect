@@ -18,6 +18,9 @@ MAKABA_PATH = "/makaba/makaba.fcgi"
 DEFAULT_MAKABA_HOSTS: Sequence[str] = (
     "https://2ch.hk",
     "https://2ch.pm",
+    "https://2ch.tf",
+    "https://2ch.wf",
+    "https://2ch.life",
     "https://2ch.org",
 )
 
@@ -93,6 +96,19 @@ class DvachClient:
             try:
                 response = self.session.get(base_url, params=params, timeout=20)
                 response.raise_for_status()
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status == 404:
+                    errors.append(
+                        f"{base_url}: тред не найден (HTTP 404). Проверьте номер треда или попробуйте другое зеркало."
+                    )
+                elif status == 403:
+                    errors.append(
+                        f"{base_url}: доступ запрещён (HTTP 403). Возможно, требуется пройти капчу или авторизоваться."
+                    )
+                else:
+                    errors.append(f"{base_url}: {exc}")
+                continue
             except requests.RequestException as exc:
                 errors.append(f"{base_url}: {exc}")
                 continue
@@ -125,6 +141,8 @@ class DvachClient:
             return "требуется пройти капчу"
         if "2ch.org" in lowered or "location.replace('https://2ch.org" in lowered:
             return "редирект на 2ch.org — укажите --api-host 2ch.org"
+        if "2ch.wf" in lowered or "2ch.tf" in lowered or "2ch.life" in lowered:
+            return "редирект на зеркало 2ch.* — попробуйте добавить его в --api-host"
         if "cloudflare" in lowered:
             return "ответ с защитой Cloudflare"
         return "получен HTML вместо JSON"
