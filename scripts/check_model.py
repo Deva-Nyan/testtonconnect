@@ -109,8 +109,14 @@ def main(
     chatbot = AnimeChatbot(config=config, persona=persona, memory=memory)
     chatbot.preload_greeting()
     console.print("Отправляем тестовое сообщение модели...")
-    reply = chatbot.chat(prompt)
-    console.print(f"Ответ: {reply}")
+    prompt_text = chatbot._build_prompt(prompt)  # type: ignore[attr-defined]
+    raw_reply = chatbot._generate(prompt_text)  # type: ignore[attr-defined]
+    reply = chatbot._extract_reply(raw_reply)  # type: ignore[attr-defined]
+    console.print(f"Сырый ответ модели: {raw_reply!r}")
+    console.print(f"Обработанный ответ: {reply}")
+    if reply.strip():
+        chatbot.history.append((prompt, reply))
+        chatbot._trim_history()  # type: ignore[attr-defined]
     if reply.strip() == config.fallback_reply.strip():
         console.print(
             "[yellow]Получен запасной ответ. Проверьте, что модель скачана, и попробуйте изменить prompt или параметры генерации."

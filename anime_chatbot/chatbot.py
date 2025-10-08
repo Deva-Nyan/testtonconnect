@@ -4,7 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+try:
+    import torch
+except ImportError as exc:  # pragma: no cover - torch is optional at import time
+    raise RuntimeError(
+        "Torch must be installed to use AnimeChatbot. Запустите scripts/bootstrap_env.*"
+    ) from exc
 
 from .config import ChatbotConfig
 from .persona import PersonaSettings
@@ -30,17 +37,22 @@ class AnimeChatbot:
         )
         self.system_prompt = persona_prompt.strip()
         self.history = []
-        device = 0 if (self.config.device == "cuda" or self.config.device == "gpu") else -1
         if self.config.device and self.config.device not in {"cpu", "cuda", "gpu"}:
-            device = self.config.device  # allow manual index
+            device_target = self.config.device
+        elif self.config.device in {"cuda", "gpu"}:
+            device_target = "cuda"
+        else:
+            device_target = "cpu"
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
         self.model = AutoModelForCausalLM.from_pretrained(self.config.model_name)
-        self.generator = pipeline(
-            "text-generation",
-            model=self.model,
-            tokenizer=self.tokenizer,
-            device=device,
-        )
+        self._device = torch.device(device_target)
+        try:
+            self.model.to(self._device)
+        except RuntimeError:
+            # Fallback to CPU if CUDA requested but unavailable.
+            self._device = torch.device("cpu")
+            self.model.to(self._device)
+        self.model.eval()
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self._fallback_reply = self.config.fallback_reply.strip()
@@ -90,19 +102,27 @@ class AnimeChatbot:
 
     def _generate(self, prompt: str) -> str:
         gen_cfg = self.config.generation
-        outputs = self.generator(
+        inputs = self.tokenizer(
             prompt,
-            max_new_tokens=gen_cfg.max_new_tokens,
-            temperature=gen_cfg.temperature,
-            top_p=gen_cfg.top_p,
-            repetition_penalty=gen_cfg.repetition_penalty,
-            pad_token_id=self.tokenizer.eos_token_id,
-            return_full_text=False,
-        )
-        generated = outputs[0]["generated_text"]
-        if isinstance(generated, list):  # transformers may return tokens instead of str
-            generated = " ".join(str(token) for token in generated)
-        return str(generated)
+            return_tensors="pt",
+            add_special_tokens=False,
+        ).to(self._device)
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                do_sample=True,
+                max_new_tokens=gen_cfg.max_new_tokens,
+                temperature=gen_cfg.temperature,
+                top_p=gen_cfg.top_p,
+                repetition_penalty=gen_cfg.repetition_penalty,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+        generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
+        if generated_ids.numel() == 0:
+            return ""
+        text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+        return text
 
     def _extract_reply(self, generated: str) -> str:
         stripped = generated.strip()
