@@ -9,10 +9,11 @@ from typing import List, Optional
 class GenerationConfig:
     """Low-level generation settings for the language model."""
 
-    max_new_tokens: int = 60
-    temperature: float = 0.65
+    max_new_tokens: int = 45
+    temperature: float = 0.6
     top_p: float = 0.9
-    repetition_penalty: float = 1.18
+    top_k: int = 50
+    repetition_penalty: float = 1.2
     no_repeat_ngram_size: int = 3
     stop_tokens: List[str] = field(default_factory=list)
 
