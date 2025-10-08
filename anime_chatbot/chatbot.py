@@ -30,7 +30,7 @@ Conversation = List[Tuple[str, str]]
 
 
 _ROLE_REGEX = re.compile(
-    r"(?:^|\n)\s*(?:User|Bot|Пользователь|Бот|[A-ZА-ЯЁ][\w-]{2,15})\s*:\s*$",
+    r"(?:^|\n)\s*(?:User|Bot|Пользователь|Бот|[A-ZА-ЯЁ][\w'`~\-]{1,20})\s*:\s*$",
     re.IGNORECASE,
 )
 
@@ -169,7 +169,10 @@ class AnimeChatbot:
         rules = (
             "Правила: отвечай одной короткой репликой без префиксов 'User:' или 'Bot:', "
             "дружелюбно, иногда добавляй 'ня~' (не чаще пары предложений), разрешена "
-            "разговорная лексика без перехода к темам про несовершеннолетних."
+            "разговорная лексика без перехода к темам про несовершеннолетних. "
+            "Отвечай от лица одной героини, не придумывай дополнительные "
+            "персонажи и не цитируй чужие реплики. Если собеседник уточняет "
+            "твоё собственное слово или шутку, поясни, что ты имела в виду."
         )
         conversation_lines.append(f"{rules}{eos}")
         if self.memory:
@@ -258,6 +261,7 @@ class AnimeChatbot:
         cleaned = text.strip()
         if not cleaned:
             return ""
+        cleaned = cleaned.lstrip("-•—–* ")
         cleaned = re.sub(
             r"@@\s*(ПЕРВЫЙ|ВТОРОЙ|FIRST|SECOND)\s*@@",
             "",
@@ -268,10 +272,13 @@ class AnimeChatbot:
         cleaned = re.sub(r"@@", "", cleaned)
         cleaned = re.sub(r"Bot_didnt_y", "", cleaned)
         cleaned = re.sub(
-            r"(?m)^(?:User|Bot|Пользователь|Бот|Dream|Uzi|Uzio|Botanicula|[A-ZА-ЯЁ][\w-]{2,15})\s*:\s*",
-            "",
+            r"(?i)(?:^|[\s\-–—])+"
+            r"(?:User|Bot|Пользователь|Бот|Dream|Uzi|Uzio|Botanicula|[A-ZА-ЯЁ][\w'`~\-]{1,20})"
+            r"\s*:\s*",
+            " ",
             cleaned,
         )
+        cleaned = re.sub(r"\s*(?:—|–|-)\s*$", "", cleaned)
         cleaned = re.sub(r"[~]{3,}", "~~", cleaned)
         cleaned = re.sub(
             r"(ня+~?)(\s*\1){2,}",

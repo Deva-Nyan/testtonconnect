@@ -15,7 +15,9 @@ class GenerationConfig:
     top_k: int = 40
     repetition_penalty: float = 1.2
     no_repeat_ngram_size: int = 3
-    stop_tokens: List[str] = field(default_factory=list)
+    stop_tokens: List[str] = field(
+        default_factory=lambda: ["User:", "Bot:", "Пользователь:", "Бот:"]
+    )
 
 
 @dataclass
