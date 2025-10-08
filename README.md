@@ -150,6 +150,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\demo_chat.ps1 -MemoryFile dat
 
 При первом запуске будет скачана модель `t-bank-ai/ruDialoGPT-medium`. Вы можете указать другую модель в конфигурации (`anime_chatbot/config.py`).
 
+> 🔧  По умолчанию генерация настроена на более сдержанный стиль: `temperature=0.7`,
+> `top_p=0.92`, `repetition_penalty=1.15`, `no_repeat_ngram_size=3` и `max_new_tokens=60`.
+> История диалога разделяется EOS-токенами, поэтому модель корректно распознаёт
+> смену ролей без добавления кастомных специальных токенов.
+
 ## 4. Импорт и подготовка данных
 Полученный JSONL-файл удобно использовать не только в чате, но и для тонкой настройки модели (см. `anime_chatbot/training.py`).
 

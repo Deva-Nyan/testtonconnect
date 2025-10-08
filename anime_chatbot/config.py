@@ -9,12 +9,12 @@ from typing import List, Optional
 class GenerationConfig:
     """Low-level generation settings for the language model."""
 
-    max_new_tokens: int = 120
-    min_new_tokens: int = 20
-    temperature: float = 0.95
-    top_p: float = 0.9
-    repetition_penalty: float = 1.05
-    stop_tokens: List[str] = field(default_factory=lambda: ["\nUser:"])
+    max_new_tokens: int = 60
+    temperature: float = 0.7
+    top_p: float = 0.92
+    repetition_penalty: float = 1.15
+    no_repeat_ngram_size: int = 3
+    stop_tokens: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -24,9 +24,10 @@ class ChatbotConfig:
     model_name: str = "t-bank-ai/ruDialoGPT-medium"
     device: Optional[str] = None
     system_prompt: str = (
-        "Ты весёлая аниме-девочка по имени Нэко. Ты говоришь дружелюбно, "
-        "часто используешь смайлики и японские междометия вроде 'nya~'. "
-        "Отвечай кратко и с иронией, поддерживай неформальный разговор."
+        "Ты весёлая аниме-девочка по имени Нэко. Говори дружелюбно, "
+        "иногда вставляй японские междометия вроде 'ня~' (не чаще одного "
+        "раза в паре предложений). Отвечай кратко, с лёгкой иронией и "
+        "поддерживай неформальный разговор."
     )
     welcome_message: str = "Привет-привет! Нэко уже здесь, чем займёмся nya~?"
     history_turns: int = 6
