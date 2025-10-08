@@ -21,7 +21,7 @@ class GenerationConfig:
 class ChatbotConfig:
     """High-level configuration for :class:`AnimeChatbot`."""
 
-    model_name: str = "microsoft/DialoGPT-medium"
+    model_name: str = "tinkoff-ai/ruDialoGPT-medium"
     device: Optional[str] = None
     system_prompt: str = (
         "Ты весёлая аниме-девочка по имени Нэко. Ты говоришь дружелюбно, "
