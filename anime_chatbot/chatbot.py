@@ -30,7 +30,7 @@ Conversation = List[Tuple[str, str]]
 
 
 _ROLE_REGEX = re.compile(
-    r"(?:^|\n)\s*(User|Bot|Dream|Uzi|Uzio|Botanicula|Пользователь|Бот)[\s:]+$",
+    r"(?:^|\n)\s*(?:User|Bot|Пользователь|Бот|[A-ZА-ЯЁ][\w-]{2,15})\s*:\s*$",
     re.IGNORECASE,
 )
 
@@ -104,6 +104,36 @@ class AnimeChatbot:
         elif tokenizer_vocab < model_vocab:
             self.model.config.vocab_size = tokenizer_vocab
         self._fallback_reply = self.config.fallback_reply.strip()
+        bad_patterns = [
+            "@@ПЕРВЫЙ@@",
+            "@@ВТОРОЙ@@",
+            "FIRST@@",
+            "SECOND@@",
+            "@@",
+            "Dream:",
+            "Bot_didnt_y",
+            "Botanicula:",
+            "Uzi:",
+            "Uzio:",
+            "User:",
+            "Bot:",
+            "Пользователь:",
+            "Бот:",
+        ]
+        bad_word_ids = []
+        for pattern in bad_patterns:
+            token_ids = self.tokenizer.encode(pattern, add_special_tokens=False)
+            if token_ids:
+                bad_word_ids.append(token_ids)
+        self._logits_processors = []
+        if bad_word_ids:
+            self._logits_processors.append(
+                NoBadWordsLogitsProcessor(
+                    bad_words_ids=bad_word_ids,
+                    eos_token_id=self.model.config.eos_token_id,
+                )
+            )
+        self._stopping_templates = [_StopOnRoleCue(self.tokenizer)]
 
     # -------------------- Public API --------------------
     def reset_history(self) -> None:
@@ -173,32 +203,12 @@ class AnimeChatbot:
         self.model.config.pad_token_id = pad_id
         if self.model.config.eos_token_id is None:
             self.model.config.eos_token_id = pad_id
-        bad_patterns = [
-            "@@ПЕРВЫЙ@@",
-            "@@ВТОРОЙ@@",
-            "FIRST@@",
-            "SECOND@@",
-            "@@",
-            "Dream:",
-            "Bot_didnt_y",
-            "Botanicula:",
-            "Uzi:",
-            "Uzio:",
-        ]
-        bad_word_ids = []
-        for pattern in bad_patterns:
-            token_ids = self.tokenizer.encode(pattern, add_special_tokens=False)
-            if token_ids:
-                bad_word_ids.append(token_ids)
-        logits_processor = LogitsProcessorList()
-        if bad_word_ids:
-            logits_processor.append(
-                NoBadWordsLogitsProcessor(
-                    bad_words_ids=bad_word_ids,
-                    eos_token_id=self.model.config.eos_token_id,
-                )
-            )
-        stopping = StoppingCriteriaList([_StopOnRoleCue(self.tokenizer)])
+        logits_processor = (
+            LogitsProcessorList(self._logits_processors)
+            if self._logits_processors
+            else LogitsProcessorList()
+        )
+        stopping = StoppingCriteriaList(self._stopping_templates)
         generate_kwargs = {
             "do_sample": True,
             "max_new_tokens": gen_cfg.max_new_tokens,
@@ -261,7 +271,7 @@ class AnimeChatbot:
         cleaned = re.sub(r"nya_[a-zA-Z0-9_]+", "ня~", cleaned)
         cleaned = re.sub(r"@@", "", cleaned)
         cleaned = re.sub(r"Bot_didnt_y", "", cleaned)
-        cleaned = re.sub(r"\b(Dream|Bot|User|Uzi|Uzio|Botanicula)\s*:\s*", "", cleaned)
+        cleaned = re.sub(r"(?m)^(?:User|Bot|Пользователь|Бот|Dream|Uzi|Uzio|Botanicula|[A-ZА-ЯЁ][\w-]{2,15})\s*:\s*", "", cleaned)
         cleaned = re.sub(r"[~]{3,}", "~~", cleaned)
         cleaned = re.sub(
             r"(ня+~?)(\s*\1){2,}",

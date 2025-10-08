@@ -6,7 +6,7 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, FrozenSet
+from typing import FrozenSet, Iterable, List
 
 
 _WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
@@ -36,7 +36,8 @@ class DvachMemory:
                 if not line:
                     continue
                 data = json.loads(line)
-                text = str(data.get("comment", "")).strip()
+                raw_text = str(data.get("comment", "")).strip()
+                text = _sanitize_memory_text(raw_text)
                 if not text:
                     continue
                 post_id = str(data.get("post_id") or data.get("num") or data.get("id") or "")
@@ -51,7 +52,7 @@ class DvachMemory:
             return []
         query_tokens = set(_tokenize(query))
         if not query_tokens:
-            return [self._posts[0].text]
+            return [_sanitize_memory_text(self._posts[0].text)]
         scored = []
         for post in self._posts:
             overlap = len(query_tokens.intersection(post.tokens))
@@ -59,14 +60,28 @@ class DvachMemory:
                 scored.append((overlap, post))
         if not scored:
             sample = random.sample(self._posts, k=min(limit, len(self._posts)))
-            return [post.text for post in sample]
+            return [_sanitize_memory_text(post.text) for post in sample]
         scored.sort(key=lambda item: item[0], reverse=True)
-        top_posts = [post.text for _, post in scored[:limit]]
+        top_posts = [_sanitize_memory_text(post.text) for _, post in scored[:limit]]
         return top_posts
 
 
 def _tokenize(text: str) -> List[str]:
     return [token.lower() for token in _WORD_RE.findall(text)]
+
+
+_ROLE_LINE = re.compile(r"(?m)^\s*\w{2,16}\s*:\s*")
+_TAG_BLOCK = re.compile(r"@@.*?@@", re.DOTALL)
+
+
+def _sanitize_memory_text(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    cleaned = _TAG_BLOCK.sub(" ", cleaned)
+    cleaned = _ROLE_LINE.sub("", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
 
 
 __all__ = ["DvachMemory"]
