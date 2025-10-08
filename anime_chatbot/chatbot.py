@@ -53,8 +53,13 @@ class AnimeChatbot:
             self._device = torch.device("cpu")
             self.model.to(self._device)
         self.model.eval()
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        if self.model.config.pad_token_id is None and self.tokenizer.pad_token_id is not None:
+            self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        if self.model.config.eos_token_id is None and self.tokenizer.eos_token_id is not None:
+            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+        if self.model.config.vocab_size != len(self.tokenizer):
+            self.model.resize_token_embeddings(len(self.tokenizer))
         self._fallback_reply = self.config.fallback_reply.strip()
 
     # -------------------- Public API --------------------
@@ -108,6 +113,17 @@ class AnimeChatbot:
             return_tensors="pt",
             add_special_tokens=False,
         ).to(self._device)
+        pad_id = (
+            self.tokenizer.pad_token_id
+            or self.model.config.pad_token_id
+            or self.tokenizer.eos_token_id
+            or self.model.config.eos_token_id
+        )
+        if pad_id is None:
+            raise RuntimeError("pad_token_id could not be resolved for generation")
+        self.model.config.pad_token_id = pad_id
+        if self.model.config.eos_token_id is None:
+            self.model.config.eos_token_id = pad_id
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
@@ -117,8 +133,8 @@ class AnimeChatbot:
                 temperature=gen_cfg.temperature,
                 top_p=gen_cfg.top_p,
                 repetition_penalty=gen_cfg.repetition_penalty,
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=pad_id,
+                eos_token_id=self.model.config.eos_token_id,
             )
         generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
         if generated_ids.numel() == 0:
