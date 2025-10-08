@@ -119,6 +119,9 @@ class AnimeChatbot:
             "Bot:",
             "Пользователь:",
             "Бот:",
+            "Я:",
+            "Мы:",
+            "Они:",
         ]
         ban_token_sequences = []
         for pattern in ban_patterns:
@@ -170,9 +173,11 @@ class AnimeChatbot:
             "Правила: отвечай одной короткой репликой без префиксов 'User:' или 'Bot:', "
             "дружелюбно, иногда добавляй 'ня~' (не чаще пары предложений), разрешена "
             "разговорная лексика без перехода к темам про несовершеннолетних. "
-            "Отвечай от лица одной героини, не придумывай дополнительных "
-            "персонажей. Если собеседник уточняет "
-            "твоё собственное слово или цитату, поясни, что ты имела в виду."
+            "Отвечай от лица одной героини, не придумывай дополнительные "
+            "персонажи и не цитируй чужие реплики. Не используй сценические описания "
+            "со звёздочками и не переходи на английский без причины. Если придумываешь "
+            "слово или прозвище, сразу коротко поясни, что оно значит. Если собеседник "
+            "переспросит твою же фразу, ещё раз объясни простыми словами."
         )
         conversation_lines.append(f"{rules}{eos}")
         if self.memory:
@@ -261,6 +266,8 @@ class AnimeChatbot:
         cleaned = text.strip()
         if not cleaned:
             return ""
+        cleaned = cleaned.replace("\r\n", "\n")
+        cleaned = self._ensure_single_voice(cleaned)
         cleaned = cleaned.lstrip("-•—–* ")
         cleaned = re.sub(
             r"@@\s*(ПЕРВЫЙ|ВТОРОЙ|FIRST|SECOND)\s*@@",
@@ -278,6 +285,9 @@ class AnimeChatbot:
             " ",
             cleaned,
         )
+        cleaned = re.sub(r"\*[^\n]{0,60}\*", "", cleaned)
+        cleaned = re.sub(r"_[^\n]{0,40}_", "", cleaned)
+        cleaned = re.sub(r"\([^\n]{0,60}\)", "", cleaned)
         cleaned = re.sub(r"\s*(?:—|–|-)\s*$", "", cleaned)
         cleaned = re.sub(r"[~]{3,}", "~~", cleaned)
         cleaned = re.sub(
@@ -293,3 +303,42 @@ class AnimeChatbot:
         cleaned = cleaned.split("\n\n")[0].strip()
         cleaned = cleaned[:300].rstrip()
         return cleaned.strip()
+
+    def _ensure_single_voice(self, text: str) -> str:
+        """Strip stray speaker prefixes and keep the main utterance only."""
+
+        # Normalise newlines to evaluate candidate speaker cues per line.
+        segments = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            # Drop explicit role markers like "Нина:" or "Я:" at the start of the line.
+            line = re.sub(
+                r"^(?:[-•—–*\s]*)(?:User|Bot|Пользователь|Бот|Я|Ты|Он|Она|Мы|Они|[A-ZА-ЯЁ][\w'`~\-]{0,20})\s*:\s*",
+                "",
+                line,
+            )
+            if line:
+                segments.append(line)
+        if not segments:
+            return ""
+        primary = segments[0]
+        # If subsequent lines look like second speakers, ignore them.
+        for segment in segments[1:]:
+            if re.match(
+                r"^(?:User|Bot|Пользователь|Бот|Я|Ты|Он|Она|Мы|Они|[A-ZА-ЯЁ][\w'`~\-]{0,20})\s*:",
+                segment,
+                flags=re.IGNORECASE,
+            ):
+                break
+            # Append if it reads like a continuation of the same sentence.
+            if not re.match(r"^[*!?_]", segment):
+                primary += " " + segment
+        # Remove any residual speaker cues inside the line.
+        primary = re.sub(
+            r"(?:^|\s)(?:User|Bot|Пользователь|Бот|Я|Ты|Он|Она|Мы|Они|[A-ZА-ЯЁ][\w'`~\-]{0,20})\s*:\s*",
+            " ",
+            primary,
+        )
+        return primary.strip()
