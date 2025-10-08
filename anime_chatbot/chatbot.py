@@ -7,8 +7,8 @@ from typing import List, Optional, Sequence, Tuple
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.generation.logits_process import (
-    BadWordsLogitsProcessor,
     LogitsProcessorList,
+    NoBadWordsLogitsProcessor,
 )
 
 try:
@@ -152,7 +152,7 @@ class AnimeChatbot:
         logits_processor = LogitsProcessorList()
         if bad_word_ids:
             logits_processor.append(
-                BadWordsLogitsProcessor(
+                NoBadWordsLogitsProcessor(
                     bad_words_ids=bad_word_ids,
                     eos_token_id=self.model.config.eos_token_id,
                 )
