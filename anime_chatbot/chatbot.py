@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.generation.logits_process import (
+    BadWordsLogitsProcessor,
+    LogitsProcessorList,
+)
 
 try:
     import torch
@@ -97,27 +101,28 @@ class AnimeChatbot:
 
     def _build_prompt(self, message: str) -> str:
         eos = self.tokenizer.eos_token or "\n"
-        conversation_lines: List[str] = [f"System: {self.system_prompt}{eos}"]
+        conversation_lines: List[str] = []
+        if self.system_prompt:
+            conversation_lines.append(f"{self.system_prompt}{eos}")
         if self.memory:
             snippets = self.memory.retrieve(message, limit=self.config.memory_snippets)
             if snippets:
                 for idx, snippet in enumerate(snippets, start=1):
-                    conversation_lines.append(f"Context {idx}: {snippet}{eos}")
+                    conversation_lines.append(f"Контекст {idx}: {snippet}{eos}")
         for user, bot in self.history:
             if user == "system":
-                conversation_lines.append(f"Assistant: {bot}{eos}")
+                conversation_lines.append(f"Bot: {bot}{eos}")
             else:
                 conversation_lines.append(f"User: {user}{eos}")
-                conversation_lines.append(f"Assistant: {bot}{eos}")
+                conversation_lines.append(f"Bot: {bot}{eos}")
         conversation_lines.append(f"User: {message}{eos}")
-        conversation_lines.append("Assistant:")
+        conversation_lines.append("Bot:")
         return "".join(conversation_lines)
 
     def _generate(self, prompt: str) -> str:
         gen_cfg = self.config.generation
-        prepared_prompt = f"{prompt}{self.tokenizer.eos_token}" if self.tokenizer.eos_token else prompt
         inputs = self.tokenizer(
-            prepared_prompt,
+            prompt,
             return_tensors="pt",
             add_special_tokens=False,
         ).to(self._device)
@@ -132,17 +137,42 @@ class AnimeChatbot:
         self.model.config.pad_token_id = pad_id
         if self.model.config.eos_token_id is None:
             self.model.config.eos_token_id = pad_id
+        bad_patterns = [
+            "@@ПЕРВЫЙ@@",
+            "@@ВТОРОЙ@@",
+            "FIRST@@",
+            "SECOND@@",
+            "@@",
+        ]
+        bad_word_ids = []
+        for pattern in bad_patterns:
+            token_ids = self.tokenizer.encode(pattern, add_special_tokens=False)
+            if token_ids:
+                bad_word_ids.append(token_ids)
+        logits_processor = LogitsProcessorList()
+        if bad_word_ids:
+            logits_processor.append(
+                BadWordsLogitsProcessor(
+                    bad_words_ids=bad_word_ids,
+                    eos_token_id=self.model.config.eos_token_id,
+                )
+            )
+        generate_kwargs = {
+            "do_sample": True,
+            "max_new_tokens": gen_cfg.max_new_tokens,
+            "temperature": gen_cfg.temperature,
+            "top_p": gen_cfg.top_p,
+            "repetition_penalty": gen_cfg.repetition_penalty,
+            "no_repeat_ngram_size": gen_cfg.no_repeat_ngram_size,
+            "pad_token_id": pad_id,
+            "eos_token_id": self.model.config.eos_token_id,
+        }
+        if len(logits_processor) > 0:
+            generate_kwargs["logits_processor"] = logits_processor
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                do_sample=True,
-                max_new_tokens=gen_cfg.max_new_tokens,
-                temperature=gen_cfg.temperature,
-                top_p=gen_cfg.top_p,
-                repetition_penalty=gen_cfg.repetition_penalty,
-                no_repeat_ngram_size=gen_cfg.no_repeat_ngram_size,
-                pad_token_id=pad_id,
-                eos_token_id=self.model.config.eos_token_id,
+                **generate_kwargs,
             )
         generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
         if generated_ids.numel() == 0:
@@ -163,15 +193,35 @@ class AnimeChatbot:
             text = generated.strip()
         if not text:
             return self._fallback_reply or self.config.fallback_reply
-        # Soft clean-up: trim excessive tildes, blank paragraphs and long tails.
-        text = re.sub(r"[~]{3,}$", "", text).strip()
-        text = text.split("\n\n")[0].strip()
-        text = re.sub(r"(ня~?\s*){3,}", "ня~ ", text, flags=re.IGNORECASE)
-        if len(text) > 400:
-            text = text[:400].rstrip()
-        return text or (self._fallback_reply or self.config.fallback_reply)
+        text = self._clean_reply_text(text)
+        if not text:
+            return self._fallback_reply or self.config.fallback_reply
+        return text
 
     def export_history(self) -> Sequence[Tuple[str, str]]:
         """Return a copy of the current conversation."""
 
         return list(self.history)
+
+    def _clean_reply_text(self, text: str) -> str:
+        cleaned = text.strip()
+        if not cleaned:
+            return ""
+        cleaned = re.sub(
+            r"@@\s*(ПЕРВЫЙ|ВТОРОЙ|FIRST|SECOND)\s*@@",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"nya_[a-zA-Z0-9_]+", "ня~", cleaned)
+        cleaned = re.sub(r"@@", "", cleaned)
+        cleaned = re.sub(r"[~]{3,}", "~~", cleaned)
+        cleaned = re.sub(
+            r"(ня+~?)(\s*\1){2,}",
+            r"\1 \1",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = cleaned.split("\n\n")[0].strip()
+        cleaned = cleaned[:400].rstrip()
+        return cleaned.strip()

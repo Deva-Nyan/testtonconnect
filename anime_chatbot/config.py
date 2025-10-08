@@ -10,9 +10,9 @@ class GenerationConfig:
     """Low-level generation settings for the language model."""
 
     max_new_tokens: int = 60
-    temperature: float = 0.7
-    top_p: float = 0.92
-    repetition_penalty: float = 1.15
+    temperature: float = 0.65
+    top_p: float = 0.9
+    repetition_penalty: float = 1.18
     no_repeat_ngram_size: int = 3
     stop_tokens: List[str] = field(default_factory=list)
 
