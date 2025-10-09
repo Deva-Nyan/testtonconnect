@@ -1,87 +1,58 @@
-"""Lightweight memory component backed by dvach threads."""
+"""Simple JSONL-backed factual memory for the chatbot."""
 from __future__ import annotations
 
 import json
-import random
+import os
 import re
-from dataclasses import dataclass
-from pathlib import Path
-from typing import FrozenSet, Iterable, List
+from typing import Dict, List
+
+FACT_PATTERNS = [
+    (re.compile(r"\bменя зовут\s+([A-Za-zА-Яа-яЁё\-]+)", re.I), "bot_name"),
+    (re.compile(r"\bя\s+(?:твоя|ваша)\s+вайфу\b", re.I), "relation_waifu"),
+    (re.compile(r"\bты\s+мой\s+любимый\s+человек\b", re.I), "affection"),
+]
 
 
-_WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
+class JsonlMemory:
+    """Persist simple structured facts extracted from dialogue."""
 
+    def __init__(self, path: str = "data/memory.jsonl") -> None:
+        self.path = path
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        if not os.path.exists(path):
+            open(path, "w", encoding="utf-8").close()
 
-@dataclass
-class MemoryPost:
-    """Simplified representation of a dvach post used for recall."""
+    def add_fact(self, fact: Dict) -> None:
+        with open(self.path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(fact, ensure_ascii=False) + "\n")
 
-    post_id: str
-    text: str
-    tokens: FrozenSet[str]
-
-
-class DvachMemory:
-    """Load dvach posts and retrieve snippets relevant to a prompt."""
-
-    def __init__(self, posts: Iterable[MemoryPost]) -> None:
-        self._posts: List[MemoryPost] = list(posts)
-
-    @classmethod
-    def from_jsonl(cls, path: Path) -> "DvachMemory":
-        posts: List[MemoryPost] = []
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
+    def load(self) -> List[Dict]:
+        facts: List[Dict] = []
+        if not os.path.exists(self.path):
+            return facts
+        with open(self.path, "r", encoding="utf-8") as fh:
+            for line in fh:
                 line = line.strip()
                 if not line:
                     continue
-                data = json.loads(line)
-                raw_text = str(data.get("comment", "")).strip()
-                text = _sanitize_memory_text(raw_text)
-                if not text:
+                try:
+                    facts.append(json.loads(line))
+                except json.JSONDecodeError:
                     continue
-                post_id = str(data.get("post_id") or data.get("num") or data.get("id") or "")
-                tokens = frozenset(_tokenize(text))
-                if not tokens:
-                    continue
-                posts.append(MemoryPost(post_id=post_id, text=text, tokens=tokens))
-        return cls(posts)
+        return facts
 
-    def retrieve(self, query: str, limit: int = 3) -> List[str]:
-        if not self._posts or limit <= 0:
-            return []
-        query_tokens = set(_tokenize(query))
-        if not query_tokens:
-            return [_sanitize_memory_text(self._posts[0].text)]
-        scored = []
-        for post in self._posts:
-            overlap = len(query_tokens.intersection(post.tokens))
-            if overlap:
-                scored.append((overlap, post))
-        if not scored:
-            sample = random.sample(self._posts, k=min(limit, len(self._posts)))
-            return [_sanitize_memory_text(post.text) for post in sample]
-        scored.sort(key=lambda item: item[0], reverse=True)
-        top_posts = [_sanitize_memory_text(post.text) for _, post in scored[:limit]]
-        return top_posts
+    def extract_and_store(self, text: str) -> None:
+        for regex, kind in FACT_PATTERNS:
+            match = regex.search(text)
+            if match:
+                value = match.group(1) if match.groups() else True
+                self.add_fact({"kind": kind, "value": value})
+
+    def retrieve(self, query: str, k: int = 5) -> List[str]:
+        facts = self.load()[-k:]
+        return [f"• {fact['kind']}: {fact.get('value', True)}" for fact in facts]
 
 
-def _tokenize(text: str) -> List[str]:
-    return [token.lower() for token in _WORD_RE.findall(text)]
-
-
-_ROLE_LINE = re.compile(r"(?m)^\s*\w{2,16}\s*:\s*")
-_TAG_BLOCK = re.compile(r"@@.*?@@", re.DOTALL)
-
-
-def _sanitize_memory_text(text: str) -> str:
-    cleaned = text.strip()
-    if not cleaned:
-        return ""
-    cleaned = _TAG_BLOCK.sub(" ", cleaned)
-    cleaned = _ROLE_LINE.sub("", cleaned)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    return cleaned.strip()
-
-
-__all__ = ["DvachMemory"]
+__all__ = ["JsonlMemory", "FACT_PATTERNS"]
