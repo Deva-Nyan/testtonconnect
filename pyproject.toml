@@ -1,0 +1,26 @@
+[project]
+name = "anime-chatbot"
+version = "0.1.0"
+description = "Customizable anime-style chatbot with data ingestion utilities"
+authors = [
+    { name = "Anime Chatbot Maintainer", email = "maintainer@example.com" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "transformers>=4.36",
+    "torch",
+    "datasets>=2.14",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "pydantic>=1.10",
+    "typer>=0.9",
+    "rich>=13.7"
+]
+
+[project.optional-dependencies]
+train = ["accelerate>=0.23"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
